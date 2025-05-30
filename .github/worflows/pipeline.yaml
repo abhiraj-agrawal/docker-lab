@@ -1,0 +1,91 @@
+name: Devops Pipeline
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push image
+      run: |
+        docker build -t ${{ secrets.ECR_REGISTRY }}/devops-lab-app:latest .
+        docker push ${{ secrets.ECR_REGISTRY }}/devops-lab-app:latest
+
+  deploy-infra:
+    runs-on: ubuntu-latest
+    needs: build-push
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Terraform Init
+      working-directory: ./terraform
+      run: terraform init
+
+    - name: Terraform Apply
+      working-directory: ./terraform
+      run: terraform apply -auto-approve
+      env:
+        TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
+        TF_VAR_cluster_name: ${{ secrets.CLUSTER_NAME }}
+        TF_VAR_cluster_version: "1.28"
+        TF_VAR_node_group_instance_types: '["t3.medium"]'
+        TF_VAR_node_group_desired_size: 2
+        TF_VAR_node_group_max_size: 3
+        TF_VAR_node_group_min_size: 1
+
+  deploy-app:
+    runs-on: ubuntu-latest
+    needs: deploy-infra
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Install Helm
+      uses: azure/setup-helm@v3
+
+    - name: Configure kubeconfig
+      run: |
+        aws eks update-kubeconfig \
+          --region ${{ secrets.AWS_REGION }} \
+          --name ${{ secrets.CLUSTER_NAME }}
+
+    - name: Deploy with Helm
+      working-directory: ./helm
+      run: |
+        helm upgrade --install devops-lab-app ./devops-lab-chart \
+          --set image.repository=${{ secrets.ECR_REGISTRY }}/devops-lab-app \
+          --set image.tag=latest

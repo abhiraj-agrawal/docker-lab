@@ -1,0 +1,33 @@
+replicaCount: 1
+image:
+  repository: 745314116274.dkr.ecr.ap-south-1.amazonaws.com/add-two-flask
+  tag: latest
+  pullPolicy: Always
+
+deployment:
+  name: "devops-lab-app"
+  labels:
+    app.kubernetes.io/name: devops-lab-app
+    app.kubernetes.io/instance: dev
+    environment: dev
+  selectorLabels:
+    app.kubernetes.io/name: devops-lab-app
+    app.kubernetes.io/instance: dev
+
+container:
+  name: "flask-container"
+
+service:
+  name: "devops-lab-app-service"
+  labels:
+    app.kubernetes.io/name: devops-lab-app
+    app.kubernetes.io/instance: dev
+    environment: dev
+  type: LoadBalancer
+  port: 80
+  targetPort: 5000
+
+resources:
+  limits:
+    cpu: 250m
+    memory: 256Mi
