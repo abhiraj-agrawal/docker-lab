@@ -2,7 +2,7 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-COPY flask-app.py .
+COPY /app/flask-app.py .
 
 RUN pip install flask
 
